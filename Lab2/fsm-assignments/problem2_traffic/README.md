@@ -74,4 +74,15 @@ The FSM cycles correctly with **5 ticks green/yellow, 2 ticks red/yellow** trans
 
 ![Waveform](waves/waveform.png)
 
+---
+
+## Tick Generation and Verification
+- A separate `tick_generator.v` module was used to derive a 1 Hz tick from the fast system clock.
+- For simulation purposes, the parameter `COUNT_MAX` was scaled down to **20** so that one tick is generated every 20 clock cycles (instead of real hardware seconds).
+- The **tick signal** is a **single-cycle pulse** which drives the FSM state transitions.
+- Verification:
+  - In GTKWave, the `tick` waveform was added along with `clk`, `NS`, and `EW`.
+  - It was confirmed that `tick` goes high only once every 20 cycles of `clk`.
+  - State transitions (NS_G → NS_Y → EW_G → EW_Y) occur **only when `tick=1`**, never in between clock cycles.
+
 
