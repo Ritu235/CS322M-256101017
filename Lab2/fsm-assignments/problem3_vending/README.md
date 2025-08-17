@@ -37,7 +37,7 @@ From `S15`:
 
 
 ## State Diagram
-![State Diagram](waves/state_diagram.jpg)
+![State Diagram](waves\state_diagram.jpg)
 
 Edges are labeled as `coin / outputs`.  
 Example: `S15 -- coin=10 --> S0 [dispense=1, chg5=1]`.
@@ -53,3 +53,4 @@ Example: `S15 -- coin=10 --> S0 [dispense=1, chg5=1]`.
 iverilog -o sim.out tb_vending_mealy.v vending_mealy.v
 vvp sim.out
 gtkwave dump.vcd
+
