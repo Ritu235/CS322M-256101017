@@ -1,6 +1,6 @@
 # RISC-V Single-Cycle with RVX10 Extensions
 
-## Files (what to submit)
+## Files 
 - `src/riscvsingle.sv`     — modified SystemVerilog CPU (CUSTOM-0 / RVX10 decode + ALU)
 - `docs/ENCODINGS.md`     — bitfields and worked encodings
 - `docs/TESTPLAN.md`      — per-op inputs and expected results
