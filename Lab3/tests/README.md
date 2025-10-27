@@ -26,6 +26,4 @@ Simulation succeeded
 - Register x0 is protected from writes.
 - `imem` and `dmem` declare memories as `RAM[0:63]` to avoid `$readmemh` range warnings.
 
-## If you hit warnings
-- `$readmemh` may warn about too few lines if your hex file has fewer than 64 words — that is harmless (remaining memory entries will be zero).
-- If you see other errors, paste the simulator output here and I'll help debug.
+
