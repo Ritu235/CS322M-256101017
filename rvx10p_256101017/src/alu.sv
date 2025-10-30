@@ -6,41 +6,63 @@
 //=====================================================
 
 module alu(
-    input  logic [31:0] a, b,          // ALU inputs
-    input  logic [4:0]  aluControl,    // ALU control (5 bits for more ops)
-    output logic [31:0] result,        // ALU output
-    output logic        zero           // Zero flag for branches
+  input  logic [31:0] a, b,
+  input  logic [3:0]  alucontrol,
+  output logic [31:0] result,
+  output logic        zero
 );
 
-    always_comb begin
-        case (aluControl)
-            // ------------------- RV32I -------------------
-            5'b00000: result = a + b;                              // ADD
-            5'b00001: result = a - b;                              // SUB
-            5'b00010: result = a & b;                              // AND
-            5'b00011: result = a | b;                              // OR
-            5'b00100: result = a ^ b;                              // XOR
-            5'b00101: result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0; // SLT
-            5'b00110: result = a << b[4:0];                        // SLL
-            5'b00111: result = a >> b[4:0];                        // SRL
-            5'b01000: result = $signed(a) >>> b[4:0];              // SRA
+  // Existing signals
+  logic [31:0] condinvb, sum;
+  logic        v;          // overflow
+  logic        isAddSub;   // true when add or subtract
 
-            // ------------------- RVX10 Custom -------------------
-            5'b01001: result = a & ~b;                             // ANDN
-            5'b01010: result = a | ~b;                             // ORN
-            5'b01011: result = ~(a ^ b);                           // XNOR
-            5'b01100: result = ($signed(a) < $signed(b)) ? a : b;  // MIN
-            5'b01101: result = ($signed(a) > $signed(b)) ? a : b;  // MAX
-            5'b01110: result = (a < b) ? a : b;                    // MINU
-            5'b01111: result = (a > b) ? a : b;                    // MAXU
-            5'b10000: result = (a << b[4:0]) | (a >> (32 - b[4:0])); // ROL
-            5'b10001: result = (a >> b[4:0]) | (a << (32 - b[4:0])); // ROR
-            5'b10010: result = ($signed(a) < 0) ? -$signed(a) : a;   // ABS
+  // Logic for add/sub/slt
+  assign condinvb = alucontrol[0] ? ~b : b;       // Invert b for subtraction
+  assign sum      = a + condinvb + alucontrol[0]; // Add/Sub
+  assign isAddSub = ~alucontrol[2] & ~alucontrol[1] |
+                    ~alucontrol[1] & alucontrol[0];
 
-            default: result = 32'd0;                                // NOP / Undefined
-        endcase
-    end
+  // signed views for MIN/MAX/ABS
+  wire signed [31:0] s1 = a;
+  wire signed [31:0] s2 = b;
 
-    assign zero = (result == 32'd0);
+  // Main ALU operation logic
+  always_comb
+    case (alucontrol)
+      // ---- original arithmetic/logic ----
+      4'b0000:  result = sum;      // add
+      4'b0001:  result = sum;      // subtract
+      4'b0010:  result = a & b;    // and
+      4'b0011:  result = a | b;    // or
+      4'b0100:  result = a ^ b;    // xor
+      4'b0101:  result = sum[31] ^ v; // slt (Set Less Than)
+
+      // ---- new ops starting from 0110 (RVX10) ----
+      4'b0110:  result = a & ~b;                       // ANDN
+      4'b0111:  result = a | ~b;                       // ORN
+      4'b1000:  result = ~(a ^ b);                     // XNOR (typo in original, was XORN)
+      4'b1001:  result = (s1 < s2) ? a : b;            // MIN (signed)
+      4'b1010:  result = (s1 > s2) ? a : b;            // MAX (signed)
+      4'b1011:  result = (a  < b)  ? a : b;            // MINU (unsigned)
+      4'b1100:  result = (a  > b)  ? a : b;            // MAXU (unsigned)
+      4'b1101: begin                                   // ROL (Rotate Left)
+          logic [4:0] sh = b[4:0];
+          result = (sh == 0) ? a : ((a << sh) | (a >> (32 - sh)));
+        end
+      4'b1110: begin                                   // ROR (Rotate Right)
+          logic [4:0] sh = b[4:0];
+          result = (sh == 0) ? a : ((a >> sh) | (a << (32 - sh)));
+        end
+      4'b1111:  result = (s1 >= 0) ? a : (0 - a);      // ABS (Absolute Value)
+      default:  result = 32'bx;
+    endcase
+
+  // Zero flag logic
+  assign zero = (result == 32'b0);
+  
+  // Overflow logic (for 'slt')
+  assign v    = ~(alucontrol[0] ^ a[31] ^ b[31]) & (a[31] ^ sum[31]) & isAddSub;
 
 endmodule
+
