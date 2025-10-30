@@ -1,177 +1,262 @@
 module datapath(
-    input  logic clk,
-    input  logic reset,
-    // Control signals (from controller)
-    input  logic alusrc_d,
-    input  logic memtoreg_d,
-    input  logic regwrite_d,
-    input  logic memread_d,
-    input  logic memwrite_d,
-    input  logic branch_d,
-    input  logic [3:0] alucontrol_d,
-    // Outputs for testing
-    output logic [31:0] pc_out,
-    output logic [31:0] alu_result_w,
-    output logic [31:0] write_data_w
+  input  logic       clk, reset,
+  input  logic [1:0] ResultSrcW,
+  input  logic       PCSrcE, ALUSrcE, 
+  input  logic       RegWriteW,
+  input  logic [1:0] ImmSrcD,
+  input  logic [3:0] ALUControlE,
+  output logic       ZeroE,
+  output logic [31:0] PCF,
+  input  logic [31:0] InstrF,
+  output logic [31:0] InstrD,
+  output logic [31:0] ALUResultM, WriteDataM,
+  input  logic [31:0] ReadDataM,
+  input  logic [1:0] ForwardAE, ForwardBE,
+  output logic [4:0] Rs1D, Rs2D, Rs1E, Rs2E,
+  output logic [4:0] RdE, RdM, RdW,
+  input  logic       StallD, StallF, FlushD, FlushE,
+
+  // --- MODIFICATION: VALID BITS ADDED ---
+  output logic       validD,
+  output logic       validE,
+  output logic       validM,
+  output logic       validW
+  // --------------------------------------
 );
 
-  // =========================
-  // IF Stage
-  // =========================
-  logic [31:0] instr_f, pc_f, pcplus4_f;
+  // Internal datapath signals
+  logic [31:0] PCD, PCE, ALUResultE, ALUResultW, ReadDataW;
+  logic [31:0] PCNextF, PCPlus4F, PCPlus4D, PCPlus4E, PCPlus4M, PCPlus4W, PCTargetE;
+  logic [31:0] WriteDataE;
+  logic [31:0] ImmExtD, ImmExtE;
+  logic [31:0] SrcAE, SrcBE, RD1D, RD2D, RD1E, RD2E;
+  logic [31:0] ResultW;
+  logic [4:0] RdD; // destination register address
 
-  // For now, no branch or hazard logic
-  logic pc_sel_f = 0;
-  logic [31:0] pc_src_f = 0;
-
-if_stage if_stage_inst (
-    .clk(clk),
-    .reset(reset),
-    .pcSrc(pc_sel_f),          // ✅ 1-bit control signal
-    .branchTarget(pc_src_f),   // ✅ 32-bit branch target address
-    .stall(1'b0),              // (optional if you have stall input)
-    .pc(pc_f),
-    .instr(instr_f)
-);
-
-
-  // =========================
-  // IF/ID Pipeline Register
-  // =========================
-  logic [31:0] instr_d, pc_d;
-
-  always_ff @(posedge clk or posedge reset)
-    if (reset) begin
-      instr_d <= 32'b0;
-      pc_d    <= 32'b0;
-    end else begin
-      instr_d <= instr_f;
-      pc_d    <= pc_f;
-    end
-
-  // =========================
-  // ID Stage
-  // =========================
-  logic [31:0] rd1_d, rd2_d, imm_d;
-  logic [4:0] rs1_d, rs2_d, rd_d;
-
-  id_stage id_stage_inst (
-      .clk(clk),
-      .reset(reset),
-      .instr(instr_d),
-      .wd_wb(write_data_w),
-      .rd_wb(rd_d),
-      .regwrite_wb(regwrite_d),   // placeholder until WB connected
-      .rd1(rd1_d),
-      .rd2(rd2_d),
-      .imm_ext(imm_d),
-      .rs1(rs1_d),
-      .rs2(rs2_d),
-      .rd(rd_d)
+    
+  // -----------------
+  // --- Fetch Stage ---
+  // -----------------
+    
+  // Mux to select next PC (either PC+4 or branch/jump target)
+  mux2 #(.WIDTH(32)) pcmux(
+    .d0 (PCPlus4F),
+    .d1 (PCTargetE),
+    .s  (PCSrcE),
+    .y  (PCNextF)
   );
-
-  // =========================
-  // ID/EX Pipeline Register
-  // =========================
-  logic [31:0] rd1_e, rd2_e, imm_e, pc_e;
-  logic [4:0] rs1_e, rs2_e, rd_e;
-  logic alusrc_e, memtoreg_e, regwrite_e, memread_e, memwrite_e, branch_e;
-  logic [3:0] alucontrol_e;
-
-  always_ff @(posedge clk or posedge reset)
-    if (reset) begin
-      rd1_e <= 0; rd2_e <= 0; imm_e <= 0; pc_e <= 0;
-      rs1_e <= 0; rs2_e <= 0; rd_e <= 0;
-      alusrc_e <= 0; memtoreg_e <= 0; regwrite_e <= 0;
-      memread_e <= 0; memwrite_e <= 0; branch_e <= 0; alucontrol_e <= 0;
-    end else begin
-      rd1_e <= rd1_d; rd2_e <= rd2_d; imm_e <= imm_d; pc_e <= pc_d;
-      rs1_e <= rs1_d; rs2_e <= rs2_d; rd_e <= rd_d;
-      alusrc_e <= alusrc_d; memtoreg_e <= memtoreg_d; regwrite_e <= regwrite_d;
-      memread_e <= memread_d; memwrite_e <= memwrite_d; branch_e <= branch_d;
-      alucontrol_e <= alucontrol_d;
-    end
-
-  // =========================
-  // EX Stage
-  // =========================
-  logic [31:0] alu_result_e, branch_target_e;
-  logic zero_e;
-
-  ex_stage ex_stage_inst (
-      .rd1(rd1_e),
-      .rd2(rd2_e),
-      .imm_ext(imm_e),
-      .pc_in(pc_e),
-      .alu_control(alucontrol_e),
-      .alusrc(alusrc_e),
-      .branch(branch_e),
-      .alu_result(alu_result_e),
-      .zero(zero_e),
-      .branch_target(branch_target_e)
+  
+  // PC Register (stalls if StallF is high)
+  flopenr #(.WIDTH(32)) IF(
+    .clk   (clk),
+    .reset (reset),
+    .en    (~StallF), // Enable only if not stalling
+    .d     (PCNextF),
+    .q     (PCF)
   );
-
-  // =========================
-  // EX/MEM Pipeline Register
-  // =========================
-  logic [31:0] alu_result_m, write_data_m;
-  logic [4:0] rd_m;
-  logic memtoreg_m, regwrite_m, memread_m, memwrite_m;
-
-  always_ff @(posedge clk or posedge reset)
-    if (reset) begin
-      alu_result_m <= 0; write_data_m <= 0; rd_m <= 0;
-      memtoreg_m <= 0; regwrite_m <= 0; memread_m <= 0; memwrite_m <= 0;
-    end else begin
-      alu_result_m <= alu_result_e; write_data_m <= rd2_e; rd_m <= rd_e;
-      memtoreg_m <= memtoreg_e; regwrite_m <= regwrite_e;
-      memread_m <= memread_e; memwrite_m <= memwrite_e;
-    end
-
-  // =========================
-  // MEM Stage
-  // =========================
-  logic [31:0] mem_data_m;
-
-  mem_stage mem_stage_inst (
-      .clk(clk),
-      .memread(memread_m),
-      .memwrite(memwrite_m),
-      .alu_result(alu_result_m),
-      .rd2(write_data_m),
-      .mem_data_out(mem_data_m)
+  
+  // Adder for PC + 4
+  adder pcadd4(
+    .a (PCF),
+    .b (32'd4),
+    .y (PCPlus4F)
   );
+    
+  // ---------------------------------------------------
+  // --- Instruction Fetch - Decode Pipeline Register ---
+  // ---------------------------------------------------
+    
+  IF_ID pipreg0 (
+    .clk      (clk),
+    .reset    (reset),
+    .clear    (FlushD),  // Flush if branch taken
+    .enable   (~StallD), // Stall for load-use
+    .InstrF   (InstrF),
+    .PCF      (PCF),
+    .PCPlus4F (PCPlus4F),
+    .InstrD   (InstrD),
+    .PCD      (PCD),
+    .PCPlus4D (PCPlus4D),
 
-  // =========================
-  // MEM/WB Pipeline Register
-  // =========================
-  logic [31:0] alu_result_wb, mem_data_wb;
-  logic [4:0] rd_wb;
-  logic memtoreg_wb, regwrite_wb;
-
-  always_ff @(posedge clk or posedge reset)
-    if (reset) begin
-      alu_result_wb <= 0; mem_data_wb <= 0; rd_wb <= 0;
-      memtoreg_wb <= 0; regwrite_wb <= 0;
-    end else begin
-      alu_result_wb <= alu_result_m; mem_data_wb <= mem_data_m; rd_wb <= rd_m;
-      memtoreg_wb <= memtoreg_m; regwrite_wb <= regwrite_m;
-    end
-
-  // =========================
-  // WB Stage
-  // =========================
-  logic [31:0] write_data_final;
-
-  wb_stage wb_stage_inst (
-      .alu_result(alu_result_wb),
-      .mem_data(mem_data_wb),
-      .mem_to_reg(memtoreg_wb),
-      .wb_data(write_data_final)
+    // --- MODIFICATION: VALID BIT ---
+    // A new instruction is always valid (1'b1).
+    // On stall, 'enable' is false, so 'validD' holds.
+    // On flush, 'clear' is true, so 'validD' becomes 0.
+    .valid_in (1'b1),
+    .valid_out(validD)
+    // -------------------------------
   );
+  
+  // ------------------
+  // --- Decode Stage ---
+  // ------------------
+  
+  // Extract register addresses from instruction
+  assign Rs1D = InstrD[19:15];
+  assign Rs2D = InstrD[24:20];  
+  assign RdD  = InstrD[11:7];
+  
+  // Register File
+  regfile rf (
+    .clk (clk),
+    .we3 (RegWriteW), // Write enable from WB stage
+    .a1  (Rs1D),      // Read address 1
+    .a2  (Rs2D),      // Read address 2
+    .a3  (RdW),       // Write address from WB stage
+    .wd3 (ResultW),   // Write data from WB stage
+    .rd1 (RD1D),      // Read data 1 output
+    .rd2 (RD2D)       // Read data 2 output
+  );  
+  
+  // Sign/Immediate Extension Unit
+  extend ext(
+    .instr  (InstrD[31:7]),
+    .immsrc (ImmSrcD),
+    .immext (ImmExtD)
+  );
+    
+  // ------------------------------------------------
+  // --- Decode - Execute Pipeline Register ---
+  // ------------------------------------------------
+    
+  ID_IEx pipreg1 (
+    .clk      (clk),
+    .reset    (reset),
+    .clear    (FlushE), // Flush for stalls or taken branches
+    .RD1D     (RD1D),
+    .RD2D     (RD2D),
+    .PCD      (PCD),
+    .Rs1D     (Rs1D),
+    .Rs2D     (Rs2D),
+    .RdD      (RdD),
+    .ImmExtD  (ImmExtD),
+    .PCPlus4D (PCPlus4D),
+    .RD1E     (RD1E),
+    .RD2E     (RD2E),
+    .PCE      (PCE),
+    .Rs1E     (Rs1E),
+    .Rs2E     (Rs2E),
+    .RdE      (RdE),
+    .ImmExtE  (ImmExtE),
+    .PCPlus4E (PCPlus4E),
 
-  assign write_data_w = write_data_final;
-  assign alu_result_w = alu_result_wb;
-  assign pc_out = pc_f;
+    // --- MODIFICATION: VALID BIT ---
+    // Propagate valid bit. 'clear' (FlushE) will set validE to 0.
+    // This register has no 'enable', so it never stalls.
+    .valid_in (validD),
+    .valid_out(validE)
+    // -------------------------------
+  );
+  
+  // -------------------
+  // --- Execute Stage ---
+  // -------------------
+  
+  // Forwarding Mux for ALU Operand A
+  mux3 #(.WIDTH(32)) forwardMuxA (
+    .d0 (RD1E),       // 00: From register file (RD1E)
+    .d1 (ResultW),    // 01: From WriteBack (ResultW)
+    .d2 (ALUResultM), // 10: From Memory (ALUResultM)
+    .s  (ForwardAE),
+    .y  (SrcAE)
+  );
+  
+  // Forwarding Mux for ALU Operand B (also serves as WriteData for 'sw')
+  mux3 #(.WIDTH(32)) forwardMuxB (
+    .d0 (RD2E),       // 00: From register file (RD2E)
+    .d1 (ResultW),    // 01: From WriteBack (ResultW)
+    .d2 (ALUResultM), // 10: From Memory (ALUResultM)
+    .s  (ForwardBE),
+    .y  (WriteDataE)  // This is data to be written for 'sw'
+  );
+  
+  // Mux to select ALU Operand B (either from regfile/forward or immediate)
+  mux2 #(.WIDTH(32)) srcbmux(
+    .d0 (WriteDataE), // From regfile/forwarding
+    .d1 (ImmExtE),    // From immediate extender
+    .s  (ALUSrcE),
+    .y  (SrcBE)
+  );  
+  
+  // Adder for branch/jump target address
+  adder pcaddbranch(
+    .a (PCE),
+    .b (ImmExtE),
+    .y (PCTargetE)
+  );  
+  
+  // The main Arithmetic Logic Unit (ALU)
+  alu alu(
+    .a          (SrcAE),
+    .b          (SrcBE),
+    .alucontrol (ALUControlE),
+    .result     (ALUResultE),
+    .zero       (ZeroE)
+  );
+    
+  // ----------------------------------------------------
+  // --- Execute - Memory Access Pipeline Register ---
+  // ----------------------------------------------------
+  
+  IEx_IMem pipreg2 (
+    .clk        (clk),
+    .reset      (reset),
+    .ALUResultE (ALUResultE),
+    .WriteDataE (WriteDataE),
+    .RdE        (RdE),
+    .PCPlus4E   (PCPlus4E),
+    .ALUResultM (ALUResultM),
+    .WriteDataM (WriteDataM),
+    .RdM        (RdM),
+    .PCPlus4M   (PCPlus4M),
+
+    // --- MODIFICATION: VALID BIT ---
+    // Propagate valid bit.
+    .valid_in (validE),
+    .valid_out(validM)
+    // -------------------------------
+  );
+    
+  // -----------------
+  // --- Memory Stage ---
+  // -----------------
+  // (No components here, just wires to 'top' module's dmem)
+    
+  // --------------------------------------------------
+  // --- Memory - Register Write Back Stage Register ---
+  // --------------------------------------------------
+  
+  IMem_IW pipreg3 (
+    .clk        (clk),
+    .reset      (reset),
+    .ALUResultM (ALUResultM),
+    .ReadDataM  (ReadDataM),
+    .RdM        (RdM),
+    .PCPlus4M   (PCPlus4M),
+    .ALUResultW (ALUResultW),
+    .ReadDataW  (ReadDataW),
+    .RdW        (RdW),
+    .PCPlus4W   (PCPlus4W),
+
+    // --- MODIFICATION: VALID BIT ---
+    // Propagate valid bit.
+    .valid_in (validM),
+    .valid_out(validW)
+    // -------------------------------
+  );
+  
+  // ----------------------
+  // --- WriteBack Stage ---
+  // ----------------------
+  
+  // Mux to select the final result to write back to the register file
+  mux3 #(.WIDTH(32)) resultmux(
+    .d0 (ALUResultW), // 00: From ALU
+    .d1 (ReadDataW),  // 01: From Data Memory
+    .d2 (PCPlus4W),   // 10: From PC+4 (for JAL)
+    .s  (ResultSrcW),
+    .y  (ResultW)
+  );
 
 endmodule
+
