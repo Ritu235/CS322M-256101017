@@ -1,16 +1,12 @@
 // File: src/mux2.sv
 // 2-to-1 Multiplexer
 
-module mux2 #(
-    parameter WIDTH = 32    // Parameterized width (default 32-bit)
-)(
-    input  logic [WIDTH-1:0] d0,  // Input 0
-    input  logic [WIDTH-1:0] d1,  // Input 1
-    input  logic             s,   // Select signal
-    output logic [WIDTH-1:0] y    // Output
+module mux2 #(parameter WIDTH=8)(
+  input  logic [WIDTH-1:0] d0, d1, // Data inputs
+  input  logic             s,      // Select signal
+  output logic [WIDTH-1:0] y       // Data output
 );
-
-    // If s=0, select d0; if s=1, select d1
-    assign y = s ? d1 : d0;
-
+    
+  // If s=1, select d1; otherwise select d0
+  assign y = s ? d1 : d0;
 endmodule
