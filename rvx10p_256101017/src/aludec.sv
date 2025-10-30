@@ -2,32 +2,57 @@
 // ALU decoder: converts ALUOp + funct3/funct7 into 5-bit ALU control for RVX10
 
 module aludec(
-  input  logic [6:0] op,
+  input  logic       opb5,
   input  logic [2:0] funct3,
-  input  logic [6:0] funct7,
+  input  logic       funct7b5, 
+  input  logic [1:0] funct7_2b,
   input  logic [1:0] ALUOp,
-  output logic [4:0] ALUControl
+  output logic [3:0] ALUControl
 );
-  always_comb begin
-    ALUControl = 5'b00000;
-    case (ALUOp)
-      2'b00: ALUControl = 5'b00000;          // add
-      2'b01: ALUControl = 5'b00001;          // sub (branch)
-      2'b10: begin                           // R-type or custom
-        case ({funct7,funct3})
-          10'b0000000_000: ALUControl = 5'b00000; // ADD
-          10'b0100000_000: ALUControl = 5'b00001; // SUB
-          10'b0000000_111: ALUControl = 5'b00010; // AND
-          10'b0000000_110: ALUControl = 5'b00011; // OR
-          10'b0000000_100: ALUControl = 5'b00100; // XOR
-          10'b0000000_010: ALUControl = 5'b00101; // SLT
-          // --- custom RVX10 opcodes ---
-          10'b0000001_000: ALUControl = 5'b10000; // CUSTOM1
-          10'b0000001_001: ALUControl = 5'b10001; // CUSTOM2
-          default:          ALUControl = 5'b00000;
-        endcase
-      end
-      default: ALUControl = 5'b00000;
+
+  logic  RtypeSub;
+  assign RtypeSub = funct7b5 & opb5;  // TRUE for R-type subtract instruction
+
+  // Combinational logic to set ALUControl
+  always_comb
+    case(ALUOp)
+      2'b00:            ALUControl = 4'b0000; // addition (for lw, sw)
+      2'b01:            ALUControl = 4'b0001; // subtraction (for beq)
+      2'b10: case(funct3) // R-type or I-type ALU
+               3'b000:  if (RtypeSub) 
+                          ALUControl = 4'b0001; // sub
+                        else        
+                          ALUControl = 4'b0000; // add, addi
+               3'b010:    ALUControl = 4'b0101; // slt, slti
+               3'b110:    ALUControl = 4'b0011; // or, ori
+               3'b111:    ALUControl = 4'b0010; // and, andi
+               default:   ALUControl = 4'bxxxx; // ???
+             endcase
+      2'b11: case(funct7_2b) //RVX10 cases
+               2'b00:  case (funct3)
+                         3'b000: ALUControl = 4'b0110; //andn
+                         3'b001: ALUControl = 4'b0111; //orn
+                         3'b010: ALUControl = 4'b1000; //xorn
+                         default: ALUControl = 4'bxxxx; // ???
+                       endcase
+               2'b01:  case (funct3)
+                         3'b000: ALUControl = 4'b1001; //min
+                         3'b001: ALUControl = 4'b1010; //max
+                         3'b010: ALUControl = 4'b1011; //minu
+                         3'b011: ALUControl = 4'b1100; //maxu
+                         default: ALUControl = 4'bxxxx; // ???
+                       endcase
+               2'b10:  case (funct3)
+                         3'b000: ALUControl = 4'b1101; //rol
+                         3'b001: ALUControl = 4'b1110; //ror
+                         default: ALUControl = 4'bxxxx; // ???
+                       endcase
+               2'b11:  case (funct3)
+                         3'b000: ALUControl = 4'b1111; //abs
+                         default: ALUControl = 4'bxxxx; // ???
+                       endcase
+               default: ALUControl = 4'bxxxx; // ???
+             endcase
+      default: ALUControl = 4'bxxxx; // ???
     endcase
-  end
 endmodule
