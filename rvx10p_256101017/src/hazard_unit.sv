@@ -3,41 +3,31 @@
 // Handles load-use stalls and control hazard flushes
 //===========================================================
 
-module hazard_unit (
-    input  logic [4:0] rs1D, rs2D,      // Source registers in Decode stage
-    input  logic [4:0] rs1E, rs2E,      // Source registers in Execute stage
-    input  logic [4:0] rdE, rdM,        // Destination registers in Execute and MEM stages
-    input  logic       memToRegE,       // 1 if instruction in EX is a load (LW)
-    input  logic       branchTakenE,    // 1 if branch or jump is taken
-    output logic       stallF,          // Stall Fetch stage
-    output logic       stallD,          // Stall Decode stage
-    output logic       flushE,          // Flush Execute stage
-    output logic       flushD           // Flush Decode stage (for branches)
+module hazard_unit(
+  input  logic [4:0] Rs1D, Rs2D,    // Source registers in Decode
+  input  logic [4:0] RdE,           // Destination register in Execute
+  input  logic       ResultSrcE0,   // Control signal: 1 if instruction in EXE is a load
+  input  logic       PCSrcE,        // Control signal: 1 if branch is taken
+  output logic       StallD, StallF,  // Stall signals for Fetch and Decode
+  output logic       FlushD, FlushE   // Flush signals for Decode and Execute
 );
 
-    // Default signals
-    always_comb begin
-        stallF = 0;
-        stallD = 0;
-        flushE = 0;
-        flushD = 0;
+  // --- Load-Use Hazard Detection ---
+  // Stall if instruction in Decode needs data from a load in Execute
+  logic lwStall;
+  assign lwStall = (ResultSrcE0 == 1) & ((RdE == Rs1D) | (RdE == Rs2D));
 
-        //==========================
-        // Load-Use Data Hazard
-        //==========================
-        if (memToRegE && ((rdE == rs1D) || (rdE == rs2D))) begin
-            stallF = 1;     // Freeze PC
-            stallD = 1;     // Freeze IF/ID
-            flushE = 1;     // Insert bubble into ID/EX
-        end
-
-        //==========================
-        // Control Hazard (Branch/Jump)
-        //==========================
-        if (branchTakenE) begin
-            flushD = 1;     // Flush IF/ID
-            flushE = 1;     // Flush ID/EX
-        end
-    end
+  // Stall the pipeline for one cycle
+  assign StallF = lwStall; // Stall PC and IF/ID pipeline register
+  assign StallD = lwStall; // Stall ID/EX pipeline register
+    
+  // --- Flush Logic ---
+    
+  // Flush Execute stage if a load-use stall occurs (insert bubble)
+  // OR if a branch is taken (instruction in EXE is wrong)
+  assign FlushE = lwStall | PCSrcE;
+    
+  // Flush Decode stage only if a branch is taken (instruction in DEC is wrong)
+  assign FlushD = PCSrcE;
 
 endmodule
