@@ -4,12 +4,10 @@
 //===========================================================
 
 module adder(
-    input  logic [31:0] a,      // First operand
-    input  logic [31:0] b,      // Second operand
-    output logic [31:0] sum     // Output sum
+  input  [31:0] a, b, // 32-bit inputs
+  output [31:0] y     // 32-bit output (a + b)
 );
 
-    // Simple combinational addition
-    assign sum = a + b;
-
+  assign y = a + b;
 endmodule
+
